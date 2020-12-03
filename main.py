@@ -3,6 +3,7 @@ import chess.svg
 import random
 import matplotlib.pyplot as plt
 
+import theorical_position_advantage as ENGINE_ADV_POSITION
 
 
 pieceTypes = [
@@ -24,8 +25,10 @@ SCORETABLE_values = {
 }
 
 FORMULA = {
-    "maxVictimValue": 0.1,
-    "nbThreats": 0.1
+    "pieceValue": 1,
+    "theorical_position": 0.05,
+    "maxVictimValue": 0.2,
+    "nbThreats": 0.2
 }
 
 class Analyzer:
@@ -39,8 +42,20 @@ class Analyzer:
 
         self.__board = chess.Board()
 
+    def setFEN(self,fen):
+        self.__board.set_fen(fen)
+
+    def getFEN(self):
+        return self.__board.fen()
+
     def isCheckmate(self):
         return self.__board.is_checkmate()
+
+    def saveBoard(self,s):
+        boardsvg = chess.svg.board(board=self.__board)
+        f = open("boards/board"+str(s)+".SVG", "w")
+        f.write(boardsvg)
+        f.close()
 
     def drawBoard(self,s,isBigChange=False):
         print(self.__board.unicode())
@@ -49,13 +64,13 @@ class Analyzer:
         return self.__board.legal_moves
 
     def move(self,m):
-        self.__board.push(random_move)
+        self.__board.push(m)
 
     def getPieceValueFromType(self,pieceType):
         pieceValue = SCORETABLE_values[pieceType]
         return pieceValue
 
-    def generateMoveScore(self,moveData):
+    def generateMoveScore(self,moveData,pieceColor):
         
         pieceType = moveData["type"]
         piecePosition = moveData["position"]
@@ -91,9 +106,10 @@ class Analyzer:
         - number of threats
         """
 
-        formulaResult = + pieceValue                                     \
-                        + FORMULA["maxVictimValue"] * maximumVictimValue \
-                        - FORMULA["nbThreats"] * nbThreats               \
+        formulaResult = + FORMULA["pieceValue"] * pieceValue                                                            \
+                        + FORMULA["theorical_position"] * ENGINE_ADV_POSITION.raw(piecePosition, pieceType, pieceColor) \
+                        + FORMULA["maxVictimValue"] * maximumVictimValue                                                \
+                        - FORMULA["nbThreats"] * nbThreats                                                              \
 
         if pieceType == "QUEEN":
             formulaResult -= pieceValue
@@ -142,10 +158,14 @@ AI_color = 'black'
 AI_OP_color = 'white'
 Analyzer = Analyzer(AI_color)
 s = 0
+nb_moves = 200
 
 toMove = AI_color
 
-while not Analyzer.isCheckmate() and s < 100:
+# Test FEN
+Analyzer.setFEN('2r4r/1k1p3b/7p/6p1/q3P3/P3KR2/1P5B/1Q1R4 w - - 0 1')
+
+while not Analyzer.isCheckmate() and s < nb_moves:
     
 
     allMoves = Analyzer.getBoardDetails()
@@ -153,13 +173,13 @@ while not Analyzer.isCheckmate() and s < 100:
     AI_Moves = allMoves[AI_color]
     AI_score = 0
     for moveIndex,moveData in enumerate(AI_Moves):
-        AI_score += (Analyzer.generateMoveScore(moveData))
+        AI_score += (Analyzer.generateMoveScore(moveData,AI_color))
 
     # AI-Opposite moves
     AI_OP_Moves = allMoves[AI_OP_color]
     AI_OP_score = 0
     for moveIndex,moveData in enumerate(AI_OP_Moves):
-        AI_OP_score += (Analyzer.generateMoveScore(moveData))
+        AI_OP_score += (Analyzer.generateMoveScore(moveData,AI_OP_color))
     
     # AI advantage
     AI_Advantage = AI_score - AI_OP_score
@@ -173,37 +193,37 @@ while not Analyzer.isCheckmate() and s < 100:
     if AI_Advantage_last == 0:
         AI_Advantage_last = 0.01
 
-    isBigChange = False
-    if abs(AI_Advantage/AI_Advantage_last)-1 > 1:
-        print('Big change !')
-        isBigChange = True
 
 
     if AI_Advantage < 0:
-        print('AI OP is winning',(AI_Advantage))
+        pass
+        #print('AI OP is winning',(AI_Advantage))
     elif AI_Advantage == 0:
-        print('No winner')
+        pass
+        #print('No winner')
     else:
-        print('AI is winning',(AI_Advantage))
+        pass
+        #print('AI is winning',(AI_Advantage))
 
-    print('Turn '+str(s))
-    if isBigChange:
-        Analyzer.drawBoard(s,True)
-    else:
-        Analyzer.drawBoard(s)
-    print('')
+    print(s,Analyzer.getFEN())
 
-    random_move = random.choice(list(Analyzer.getLegalMoves()))
+    # Save board as a file
+    Analyzer.saveBoard(s)
+
+    # RANDOM MOVE
+    next_move = random.choice(list(Analyzer.getLegalMoves()))
+
     
-    Analyzer.move(random_move)
+    Analyzer.move(next_move)
 
     if toMove == AI_color:
         toMove = AI_OP_color
         MEMORY_AI_Advantages.append(AI_Advantage)
-        s+=1
     else:
         toMove = AI_color
         MEMORY_AI_Advantages.append(AI_Advantage)
+    
+    s+=1
 
 def getAverageScore2turn(raw):
 
