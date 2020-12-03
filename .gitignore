@@ -132,3 +132,5 @@ dmypy.json
 # Customs
 # Images
 boards/
+# Credentials
+localCredentials.py

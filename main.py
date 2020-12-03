@@ -4,7 +4,7 @@ import random
 import matplotlib.pyplot as plt
 
 import theorical_position_advantage as ENGINE_ADV_POSITION
-
+from LichessComparator import LichessComparator
 
 pieceTypes = [
     'PAWN',
@@ -154,16 +154,22 @@ class Analyzer:
 
 
 MEMORY_AI_Advantages = []
+MEMORY_Lichess_Advantages = []
 AI_color = 'black'
 AI_OP_color = 'white'
 Analyzer = Analyzer(AI_color)
 s = 0
-nb_moves = 200
+nb_moves = 100
 
 toMove = AI_color
 
 # Test FEN
-Analyzer.setFEN('2r4r/1k1p3b/7p/6p1/q3P3/P3KR2/1P5B/1Q1R4 w - - 0 1')
+#Analyzer.setFEN('2r4r/1k1p3b/7p/6p1/q3P3/P3KR2/1P5B/1Q1R4 w - - 0 1')
+
+# Start the lichess comparator
+instance = LichessComparator(False)
+isConnected = instance.connectToLichess()
+print('Lichess Comparator connection: {}'.format(isConnected))
 
 while not Analyzer.isCheckmate() and s < nb_moves:
     
@@ -205,7 +211,10 @@ while not Analyzer.isCheckmate() and s < nb_moves:
         pass
         #print('AI is winning',(AI_Advantage))
 
-    print(s,Analyzer.getFEN())
+    actualFEN = Analyzer.getFEN()
+    # Compare to Lichess
+    lichessScore = instance.getScore(actualFEN)
+    MEMORY_Lichess_Advantages.append(lichessScore)
 
     # Save board as a file
     Analyzer.saveBoard(s)
@@ -223,6 +232,7 @@ while not Analyzer.isCheckmate() and s < nb_moves:
         toMove = AI_color
         MEMORY_AI_Advantages.append(AI_Advantage)
     
+    print(s)
     s+=1
 
 def getAverageScore2turn(raw):
@@ -235,14 +245,17 @@ def getAverageScore2turn(raw):
             lastElm = raw[i-1]
             avg = (lastElm + v) /2
             MEMORY_Average_Advantages.append(avg)
+            MEMORY_Average_Advantages.append(avg)
 
     return MEMORY_Average_Advantages
 
-plt.plot(MEMORY_AI_Advantages)
+x = [i for i in range(nb_moves)]
+
+
+plt.plot(x, MEMORY_AI_Advantages, color='grey')
+plt.plot(x, getAverageScore2turn(MEMORY_AI_Advantages), color='red')
+plt.plot(x, MEMORY_Lichess_Advantages, color='green')
 plt.ylabel('AI Advantage per turn')
 plt.show()
 
-plt.plot(getAverageScore2turn(MEMORY_AI_Advantages))
-plt.ylabel('AI Advantage per turn (avg)')
-plt.show()
 
