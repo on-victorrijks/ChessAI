@@ -134,3 +134,7 @@ dmypy.json
 boards/
 # Credentials
 localCredentials.py
+# Debug files
+*.debug
+# Deprecated files
+*.deprecated

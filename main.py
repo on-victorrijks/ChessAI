@@ -27,8 +27,8 @@ SCORETABLE_values = {
 FORMULA = {
     "pieceValue": 1,
     "theorical_position": 0.05,
-    "maxVictimValue": 0.2,
-    "nbThreats": 0.2
+    "maxVictimValue": 0.1,
+    "nbThreats": 0.1
 }
 
 class Analyzer:
@@ -37,10 +37,28 @@ class Analyzer:
     
         if AI_color == 'black':
             self.AI_color = True
+            self.AI_color_expl = 'black'
+            self.AI_color_expl_op = 'white'
         else:
             self.AI_color = False
+            self.AI_color_expl = 'white'
+            self.AI_color_expl_op = 'black'
+        
 
         self.__board = chess.Board()
+
+    def getPlayingColor(self):
+        if self.__board.turn:
+            return self.AI_color_expl
+        else:
+            return self.AI_color_expl_op
+
+    def setPlayingColor(self,color):
+        if color == self.AI_color_expl:
+            self.__board.turn = True
+        else:
+            self.__board.turn = False
+
 
     def setFEN(self,fen):
         self.__board.set_fen(fen)
@@ -117,14 +135,21 @@ class Analyzer:
 
         return formulaResult
 
-
     def getBoardDetails(self):
         boardData = {
             'black': [],
             'white': []
         }
 
-        legal_moves = self.getLegalMoves()
+        # Simulate both players
+        self.setPlayingColor(self.AI_color_expl)
+        legal_moves = list(self.getLegalMoves())
+
+        self.setPlayingColor(self.AI_color_expl_op)
+        legal_moves = legal_moves + list(self.getLegalMoves())
+
+
+
         legal_moves_starter = [m.uci()[0:2] for m in legal_moves]
         legal_moves_ender = [m.uci()[2:4] for m in legal_moves]
 
@@ -135,13 +160,12 @@ class Analyzer:
 
             if pieceColor != None:
                 if pieceColor:
-                    pieceClass = 'black'
+                    pieceClass = self.AI_color_expl_op
                 else:
-                    pieceClass = 'white'
-                    
-                possibleVictims = [p for p in self.__board.attacks(i) if not self.__board.color_at(p) and chess.square_name(p) in legal_moves_ender ]
-                possibleAttacker = [a for a in self.__board.attackers(not self.AI_color,i) if chess.square_name(a) in legal_moves_starter ]
-
+                    pieceClass = self.AI_color_expl
+                                    
+                possibleVictims = [a for a in list(self.__board.attacks(i)) if self.__board.piece_at(a) != None and self.__board.piece_at(a).color != pieceColor]
+                possibleAttacker = [a for a in list(self.__board.attackers(pieceColor,chess.parse_square(piecePosition))) if self.__board.piece_at(a).color != pieceColor]
 
                 boardData[pieceClass].append({
                     'type': pieceTypes[pieceType-1],
@@ -149,40 +173,51 @@ class Analyzer:
                     'attacks': possibleVictims,
                     'attackers': possibleAttacker
                 })
-        
+            
         return boardData
 
 
 MEMORY_AI_Advantages = []
 MEMORY_Lichess_Advantages = []
+
+PARAM_CompareToLichess = True
+PARAM_ConsoleSteps = True
+
 AI_color = 'black'
 AI_OP_color = 'white'
 Analyzer = Analyzer(AI_color)
+
+colorToPlay = 'black'
+
 s = 0
-nb_moves = 100
+nb_moves = 50
 
-toMove = AI_color
-
-# Test FEN
-#Analyzer.setFEN('2r4r/1k1p3b/7p/6p1/q3P3/P3KR2/1P5B/1Q1R4 w - - 0 1')
 
 # Start the lichess comparator
-instance = LichessComparator(False)
-isConnected = instance.connectToLichess()
-print('Lichess Comparator connection: {}'.format(isConnected))
+if PARAM_CompareToLichess:
+    instance = LichessComparator(AI_color,True)
+    isConnected = instance.connectToLichess()
+    print('Lichess Comparator connection: {}'.format(isConnected))
+
+# Test FEN
+#Analyzer.setFEN('3k4/4p3/8/8/8/8/4P3/3K4 w - - 0 1')
 
 while not Analyzer.isCheckmate() and s < nb_moves:
     
+    # Get board details
+    moves = Analyzer.getBoardDetails()
 
-    allMoves = Analyzer.getBoardDetails()
+    # Reset the playing color
+    Analyzer.setPlayingColor(colorToPlay)
+
     # AI moves
-    AI_Moves = allMoves[AI_color]
+    AI_Moves = moves[AI_color]
     AI_score = 0
     for moveIndex,moveData in enumerate(AI_Moves):
         AI_score += (Analyzer.generateMoveScore(moveData,AI_color))
 
     # AI-Opposite moves
-    AI_OP_Moves = allMoves[AI_OP_color]
+    AI_OP_Moves = moves[AI_OP_color]
     AI_OP_score = 0
     for moveIndex,moveData in enumerate(AI_OP_Moves):
         AI_OP_score += (Analyzer.generateMoveScore(moveData,AI_OP_color))
@@ -190,72 +225,38 @@ while not Analyzer.isCheckmate() and s < nb_moves:
     # AI advantage
     AI_Advantage = AI_score - AI_OP_score
 
-    # big gain
-    if len(MEMORY_AI_Advantages) > 0:
-        AI_Advantage_last = MEMORY_AI_Advantages[(len(MEMORY_AI_Advantages)-1)]
-    else:
-        AI_Advantage_last = 1
-    
-    if AI_Advantage_last == 0:
-        AI_Advantage_last = 0.01
 
+    ## Graph data collector
+    MEMORY_AI_Advantages.append(AI_Advantage)
 
-
-    if AI_Advantage < 0:
-        pass
-        #print('AI OP is winning',(AI_Advantage))
-    elif AI_Advantage == 0:
-        pass
-        #print('No winner')
-    else:
-        pass
-        #print('AI is winning',(AI_Advantage))
-
+    # Lichess score comparator
     actualFEN = Analyzer.getFEN()
-    # Compare to Lichess
-    lichessScore = instance.getScore(actualFEN)
-    MEMORY_Lichess_Advantages.append(lichessScore)
+    if PARAM_CompareToLichess:
+        lichessScore = instance.getScore(actualFEN)
+        MEMORY_Lichess_Advantages.append(lichessScore)
 
-    # Save board as a file
-    Analyzer.saveBoard(s)
 
-    # RANDOM MOVE
+    # Select a random move
     next_move = random.choice(list(Analyzer.getLegalMoves()))
-
-    
     Analyzer.move(next_move)
 
-    if toMove == AI_color:
-        toMove = AI_OP_color
-        MEMORY_AI_Advantages.append(AI_Advantage)
+    if colorToPlay == AI_color:
+        colorToPlay = AI_OP_color
     else:
-        toMove = AI_color
-        MEMORY_AI_Advantages.append(AI_Advantage)
-    
-    print(s)
+        colorToPlay = AI_color
+
+    if PARAM_ConsoleSteps:
+        print('{}: {}'.format(s,AI_Advantage))
+
     s+=1
 
-def getAverageScore2turn(raw):
-
-    MEMORY_Average_Advantages = []
-
-    for i,v in enumerate(raw):
-
-        if i%2 == 0:
-            lastElm = raw[i-1]
-            avg = (lastElm + v) /2
-            MEMORY_Average_Advantages.append(avg)
-            MEMORY_Average_Advantages.append(avg)
-
-    return MEMORY_Average_Advantages
-
-x = [i for i in range(nb_moves)]
 
 
-plt.plot(x, MEMORY_AI_Advantages, color='grey')
-plt.plot(x, getAverageScore2turn(MEMORY_AI_Advantages), color='red')
-plt.plot(x, MEMORY_Lichess_Advantages, color='green')
+x = [i for i in range(len(MEMORY_AI_Advantages))]
+
+
+plt.plot(x, [-a for a in MEMORY_AI_Advantages], color='red')
+if PARAM_CompareToLichess:
+    plt.plot(x, MEMORY_Lichess_Advantages, color='green')
 plt.ylabel('AI Advantage per turn')
 plt.show()
-
-
