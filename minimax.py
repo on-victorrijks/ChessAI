@@ -19,3 +19,6 @@ class Node:
 
     def clearChilds(self):
         self.__childs = []
+
+    def score(self):
+        print(self.data()[0])
