@@ -2,6 +2,7 @@ import chess
 import chess.svg
 import random
 import matplotlib.pyplot as plt
+from minimax import *
 
 import theorical_position_advantage as ENGINE_ADV_POSITION
 from LichessComparator import LichessComparator
@@ -66,6 +67,9 @@ class Analyzer:
     def getFEN(self):
         return self.__board.fen()
 
+    def isGameOver(self):
+        return self.__board.is_game_over()
+
     def isCheckmate(self):
         return self.__board.is_checkmate()
 
@@ -83,6 +87,9 @@ class Analyzer:
 
     def move(self,m):
         self.__board.push(m)
+    
+    def back(self):
+        self.__board.pop()
 
     def getPieceValueFromType(self,pieceType):
         pieceValue = SCORETABLE_values[pieceType]
@@ -176,34 +183,28 @@ class Analyzer:
             
         return boardData
 
+    def reset(self):
+        self.__board.reset()
 
-MEMORY_AI_Advantages = []
-MEMORY_Lichess_Advantages = []
-
-PARAM_CompareToLichess = True
-PARAM_ConsoleSteps = True
-
-AI_color = 'black'
-AI_OP_color = 'white'
-Analyzer = Analyzer(AI_color)
-
-colorToPlay = 'black'
-
-s = 0
-nb_moves = 50
-
-
-# Start the lichess comparator
-if PARAM_CompareToLichess:
-    instance = LichessComparator(AI_color,True)
-    isConnected = instance.connectToLichess()
-    print('Lichess Comparator connection: {}'.format(isConnected))
-
-# Test FEN
-#Analyzer.setFEN('3k4/4p3/8/8/8/8/4P3/3K4 w - - 0 1')
-
-while not Analyzer.isCheckmate() and s < nb_moves:
+def fillSize(lst,size):
+    while len(lst) != size:
+        lst.append(lst[0])
     
+    return lst
+
+
+def correctSize(lst,size):
+    while len(lst) != size:
+        lst.append(None)
+    
+    return lst
+
+def oppositeColor(color):
+    if color == 'black':
+        return 'white'
+    return 'black'
+
+def getScoreFromSimulatedBoard(Analyzer,colorToPlay):
     # Get board details
     moves = Analyzer.getBoardDetails()
 
@@ -223,40 +224,159 @@ while not Analyzer.isCheckmate() and s < nb_moves:
         AI_OP_score += (Analyzer.generateMoveScore(moveData,AI_OP_color))
     
     # AI advantage
-    AI_Advantage = AI_score - AI_OP_score
-
-
-    ## Graph data collector
-    MEMORY_AI_Advantages.append(AI_Advantage)
-
-    # Lichess score comparator
-    actualFEN = Analyzer.getFEN()
-    if PARAM_CompareToLichess:
-        lichessScore = instance.getScore(actualFEN)
-        MEMORY_Lichess_Advantages.append(lichessScore)
-
-
-    # Select a random move
-    next_move = random.choice(list(Analyzer.getLegalMoves()))
-    Analyzer.move(next_move)
-
-    if colorToPlay == AI_color:
-        colorToPlay = AI_OP_color
+    if AI_color == 'black':
+        AI_Advantage = AI_score - AI_OP_score
     else:
-        colorToPlay = AI_color
+        AI_Advantage = AI_OP_score - AI_score
 
-    if PARAM_ConsoleSteps:
-        print('{}: {}'.format(s,AI_Advantage))
+    return AI_Advantage
+    
 
-    s+=1
+MEMORY_AI_Advantages_BIGTEST = []
+
+AI_color = 'black'
+AI_OP_color = 'white'
+
+Analyzer = Analyzer(AI_color)
+
+PARAM_CompareToLichess = False
+PARAM_ConsoleSteps = False
+PARAM_ConsoleBoard = False
+PARAM_ConsoleBigTest = True
+PARAM_BigTest = True
+PARAM_BigTest_count = 200
+PARAM_maxTurn = 75
+
+def Simulation():
+
+
+    MEMORY_AI_Advantages = []
+    MEMORY_Lichess_Advantages = []
+
+    colorToPlay = 'black'
+
+    s = 0
+    nb_moves = PARAM_maxTurn
+
+
+    # Start the lichess comparator
+    if PARAM_CompareToLichess:
+        instance = LichessComparator(AI_color,True)
+        isConnected = instance.connectToLichess()
+        print('Lichess Comparator connection: {}'.format(isConnected))
+
+    # Test FEN
+    #Analyzer.setFEN('3k4/4p3/8/8/8/8/4P3/3K4 w - - 0 1')
+
+    # Reset Board
+    Analyzer.reset()
+
+    while not Analyzer.isGameOver() and s < nb_moves:
+        
+
+        # Actual board configuration score generator
+        AI_Advantage = getScoreFromSimulatedBoard(Analyzer,colorToPlay)
+
+
+        ## Graph data collector
+        MEMORY_AI_Advantages.append(AI_Advantage)
+
+        # Lichess score comparator
+        actualFEN = Analyzer.getFEN()
+        if PARAM_CompareToLichess:
+            lichessScore = instance.getScore(actualFEN)
+            MEMORY_Lichess_Advantages.append(lichessScore)
+
+
+        # Use minimax to select a move (or random if not AI)
+        if colorToPlay == AI_color:
+            ActualPosition = Node(0,[
+                AI_Advantage,
+                colorToPlay,
+                None
+            ])
+            ActualPosition.clearChilds()
+
+            legalsMoves = list(Analyzer.getLegalMoves())
+            for move in legalsMoves:
+                # Get the correct color
+                simulatedColor = oppositeColor(colorToPlay)
+                # Simulate move and create node
+                Analyzer.move(move)
+                child = Node(0,[
+                    getScoreFromSimulatedBoard(Analyzer,simulatedColor),
+                    simulatedColor,
+                    move
+                ])
+                Analyzer.back()
+
+                ActualPosition.addChild(child)
+
+
+            # Select the best move for black (depth = 1)
+            bestMove = None
+            bestScore = float('inf')
+            for child in ActualPosition.childs():
+                if child.data()[0] < bestScore:
+                    bestMove = child.data()[2]
+                    bestScore = child.data()[0]
+            
+            Analyzer.move(bestMove)
+        
+        else:
+            # Select a random move
+            next_move = random.choice(list(Analyzer.getLegalMoves()))
+            Analyzer.move(next_move)
+
+
+        if colorToPlay == AI_color:
+            colorToPlay = AI_OP_color
+        else:
+            colorToPlay = AI_color
+
+
+        if PARAM_ConsoleBoard:
+            Analyzer.drawBoard(s)
+        if PARAM_ConsoleSteps:
+            print('{}: {}'.format(s,AI_Advantage))
+
+        if PARAM_ConsoleBoard or PARAM_ConsoleSteps:
+            print('')
+
+
+        s+=1
+
+    return [MEMORY_AI_Advantages,MEMORY_Lichess_Advantages]
+
+
+x = [i for i in range(PARAM_maxTurn)]
+
+if PARAM_BigTest:
+    i = 1
+    endPoints = []
+    while i <= PARAM_BigTest_count:
+        tempRes = Simulation()[0]
+        endPoint = tempRes[len(tempRes)-1]
+        endPoints.append(endPoint)
+
+        plt.plot(x, correctSize(tempRes,PARAM_maxTurn), color='black', alpha=0.2)
+        if PARAM_ConsoleBigTest:
+            print('{}/{}'.format(i,PARAM_BigTest_count))
+        i += 1
+    
+    averageEndpoint = sum(endPoints) / len(endPoints)
+    print(averageEndpoint)
+    
+    plt.plot(x, fillSize([averageEndpoint],PARAM_maxTurn), color='green', alpha=0.4)
+    plt.plot(x, fillSize([0],PARAM_maxTurn), color='red', alpha=0.4)
+
+else:
+    plt.plot(x, correctSize(Simulation()[0],PARAM_maxTurn), color='red')
 
 
 
-x = [i for i in range(len(MEMORY_AI_Advantages))]
-
-
-plt.plot(x, [-a for a in MEMORY_AI_Advantages], color='red')
 if PARAM_CompareToLichess:
     plt.plot(x, MEMORY_Lichess_Advantages, color='green')
+
 plt.ylabel('AI Advantage per turn')
 plt.show()
