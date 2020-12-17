@@ -139,3 +139,5 @@ localCredentials.py
 quickTests/
 # Deprecated files
 *.deprecated
+# Sample games
+Sample/

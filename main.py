@@ -28,9 +28,9 @@ SCORETABLE_values = {
 FORMULA = {
     "pieceValue": 2,
     "theorical_position": 0.1,
-    "maxVictimValue": 0.5,
-    "case_protected": 0.1,
-    "nbThreats": 0.4
+    "maxVictimValue": 0.55,
+    "nbThreats": 0.5,
+    "case_protected": 0.1
 }
 
 
@@ -75,8 +75,8 @@ class Analyzer:
         if self.isGameOver():
             res = res.split('-')
             if res[0] == '1/2':
-                res[0] = eval(res[0])
-                res[1] = eval(res[1])
+                res[0] = 2
+                res[1] = 2
             return {'white':float(res[0]), 'black': float(res[1])}
         else:
             return {'white':None, 'black': None}
@@ -206,7 +206,6 @@ def fillSize(lst,size):
     
     return lst
 
-
 def correctSize(lst,size):
     while len(lst) != size:
         lst.append(None)
@@ -236,44 +235,57 @@ def getScoreFromSimulatedBoard(Analyzer,colorToPlay,AI_color,AI_OP_color):
     AI_OP_score = 0
     for moveIndex,moveData in enumerate(AI_OP_Moves):
         AI_OP_score += (Analyzer.generateMoveScore(moveData,AI_OP_color))
+
     
-    # AI advantage
-    if AI_color == 'black':
-        AI_Advantage = AI_score - AI_OP_score
-    else:
-        AI_Advantage = AI_OP_score - AI_score
+    # AI advantage (/!\)
+    AI_Advantage = AI_OP_score - AI_score
 
     return AI_Advantage
     
 
 MEMORY_AI_Advantages_BIGTEST = []
 
-AI_color = 'white'
-AI_OP_color = 'black'
+Initial_AI_color = 'black'
+
+AI_color = Initial_AI_color
+AI_OP_color = oppositeColor(AI_color)
 
 Analyzer = Analyzer(AI_color)
 
+MEMORY_AIAdvantage = 0
+
 PARAM_CompareToLichess = False
-PARAM_ConsoleSteps = False
+PARAM_ConsoleSteps = True
 PARAM_ConsoleBoard = False
 PARAM_ConsoleBigTest = False
+PARAM_ConsoleCalculations = True
+PARAM_ConsoleMoves = False
 PARAM_BigTest = False
 PARAM_BigTest_count = 100
-PARAM_randomAI_OP_Moves = True
+PARAM_LogTree = False
+PARAM_randomAI_OP_Moves = False
 PARAM_maxTurn = 50
 PARAM_ColorToPlay = 'white'
-PARAM_Depth = 1
+PARAM_Depth = 3
+PARAM_Fast = False
+PARAM_PlayAgainstHimself = True
 TEMP_calculatedScenarios = 0
 
-def generateScoreTree(Analyzer,_head,_color,_depth):
+def generateScoreTree(Analyzer,_head,_color,_depth,debug=False):
     global TEMP_calculatedScenarios
+
+    DebugState = False
 
     if _depth > 0:
 
+        # Get the correct color
+
+        Analyzer.setPlayingColor(_color)
         legalsMoves = list(Analyzer.getLegalMoves())
+        simulatedColor = oppositeColor(_color)
+
         for move in legalsMoves:
-            # Get the correct color
-            simulatedColor = oppositeColor(_color)
+
             # Simulate move
             Analyzer.move(move)
             # Results
@@ -281,24 +293,23 @@ def generateScoreTree(Analyzer,_head,_color,_depth):
             specialTreatement = None
             if res[AI_color] == 1.0:
                 specialTreatement = True
-            elif res[AI_color] == 0.0:
+            elif res[AI_color] == 2.0:
+                # never surrender
                 specialTreatement = False
+            elif res[AI_color] == 0.0:
+                specialTreatement = False                
+
 
             # Getting the score
             score = getScoreFromSimulatedBoard(Analyzer,simulatedColor,AI_color,AI_OP_color)
             TEMP_calculatedScenarios += 1
-            if TEMP_calculatedScenarios % 1000 == 0:
-                print(TEMP_calculatedScenarios)
+            if TEMP_calculatedScenarios % 10000 == 0 and PARAM_ConsoleCalculations:
+                print('{} simulations...'.format(TEMP_calculatedScenarios))
 
             # Create node
-            child = Node(0,[
-                score,
-                simulatedColor,
-                move,
-                specialTreatement
-            ])
+            child = Sim(score,move,specialTreatement)
             
-            generateScoreTree(Analyzer,child,simulatedColor,(_depth-1))
+            generateScoreTree(Analyzer,child,simulatedColor,(_depth-1),DebugState)
 
             Analyzer.back()
 
@@ -306,38 +317,54 @@ def generateScoreTree(Analyzer,_head,_color,_depth):
 
 def minimax(_head,_color,_depth,maxDepth,alert=False):    
 
+    SpecialTreatement = _head.getSpecial()
+
     if _depth == maxDepth:
         # bottom elements
-        return _head.data()[0]
+
+        # Detect gameover
+        if SpecialTreatement == True:
+            return ((maxDepth+1)-_depth)*1000
+        elif SpecialTreatement == False:
+            return float('-inf')
+        else:
+            bottomScore = _head.getData()
+            if PARAM_Fast:
+                if bottomScore-3 > AI:
+                    pass
+            return _head.getData()
     else:
 
-        advantages = []
-        childs = _head.childs()
-        for child in childs:
-            temp_minimax = minimax(child,oppositeColor(_color),(_depth+1),maxDepth) 
-            advantages.append(temp_minimax)
-
-
-        if _color == AI_color:
-            # Highest score
-            max_advantage = max(advantages)
-            toTransferIndex = advantages.index(max_advantage)
+        # Detect gameover
+        if SpecialTreatement == True:
+            return ((maxDepth+1)-_depth)*1000
+        elif SpecialTreatement == False:
+            return float('-inf')
         else:
-            # Lowest score
-            min_advantage = min(advantages)
-            toTransferIndex = advantages.index(min_advantage)
-            #print(min_advantage)
 
-        if _depth == 0:
-            return childs[toTransferIndex].data()[2]
-        else:
-            return advantages[toTransferIndex]
+            advantages = []
+            childs = _head.getChilds()
+            for child in childs:
+                temp_minimax = minimax(child,oppositeColor(_color),(_depth+1),maxDepth) 
+                advantages.append(temp_minimax)
 
-            
+            # /!\ To test
+            if len(advantages) == 0:
+                return float('inf')
 
+            if _color == AI_color:
+                # Highest score
+                max_advantage = max(advantages)
+                toTransferIndex = advantages.index(max_advantage)
+            else:
+                # Lowest score
+                min_advantage = min(advantages)
+                toTransferIndex = advantages.index(min_advantage)
 
-    
-
+            if _depth == 0:
+                return childs[toTransferIndex].getMove()
+            else:
+                return advantages[toTransferIndex]
 
 
 
@@ -346,13 +373,15 @@ def minimax(_head,_color,_depth,maxDepth,alert=False):
 
 def Simulation():
 
+    global AI_color
+    global AI_OP_color
 
     MEMORY_AI_Advantages = []
     MEMORY_Lichess_Advantages = []
 
     colorToPlay = PARAM_ColorToPlay
 
-    s = 0
+    s = 1
     nb_moves = PARAM_maxTurn
 
 
@@ -366,19 +395,29 @@ def Simulation():
     Analyzer.reset()
 
     # Test FEN
-    Analyzer.setFEN('r2qkbnr/pppppp1p/6p1/3b1n2/8/3B3N/PPPPPPPP/RNQB1K1R w KQkq - 0 1')
+    #Analyzer.setFEN('1KR1Q2R/1B3PBP/P7/2PPN3/8/1pPpp2p/p1p2qb1/r1bk2nr w kq - 0 14')
 
 
+    # First board
+    Analyzer.saveBoard(0)
 
 
-
-    while not Analyzer.isGameOver() and s < nb_moves:
+    while not Analyzer.isGameOver() and s <= nb_moves:
         
         # Actual board configuration score generator
         AI_Advantage = getScoreFromSimulatedBoard(Analyzer,colorToPlay,AI_color,AI_OP_color)
 
         ## Graph data collector
-        MEMORY_AI_Advantages.append(AI_Advantage)
+        if Initial_AI_color == 'black':
+            if AI_color == 'black':
+                MEMORY_AI_Advantages.append(-AI_Advantage)
+            else:
+                MEMORY_AI_Advantages.append(AI_Advantage)
+        else:
+            if AI_color == 'black':
+                MEMORY_AI_Advantages.append(AI_Advantage)
+            else:
+                MEMORY_AI_Advantages.append(-AI_Advantage)
 
         # Lichess score comparator
         actualFEN = Analyzer.getFEN()
@@ -389,12 +428,7 @@ def Simulation():
 
         # Use minimax to select a move (or random if not AI)
         if colorToPlay == AI_color:
-            ActualPosition = Node(PARAM_Depth,[
-                AI_Advantage,
-                colorToPlay,
-                None,
-                None
-            ])
+            ActualPosition = Sim(AI_Advantage,None,None)
             ActualPosition.clearChilds()
 
             _head = ActualPosition
@@ -406,57 +440,57 @@ def Simulation():
             
             # generate Tree
             generateScoreTree(Analyzer,_head,_color,PARAM_Depth)
+            # order first line of the tree
+            _head.orderChilds()
+
             #print('Tree done !')
             
-            
+            # Log tree (advanced debugging)
+            if PARAM_LogTree:
+                temp = _head.showTree(0)
+                f = open("tree.debug", "a")
+                f.write(temp)
+                f.close()
+                i = str(input('ENTER TO LOG ANOTHER TREE'))
+
             # search the best path
             bestMove = minimax(_head,_color,0,PARAM_Depth)
-            #print('Best move found !')
 
-            """
-            if AI_color == 'black':
-                # Select the best move for black (depth = 1)
-                bestMove = None
-                bestScore = float('-inf')
-                for child in ActualPosition.childs():
-                    childData = child.data()
-                    if childData[3] == True:
-                        bestMove = childData[2]
-                        break
-                    elif childData[3] == None:
-                        if childData[0] > bestScore:
-                            bestMove = childData[2]
-                            bestScore = childData[0]
-            else:
-                # Select the best move for white (depth = 1)
-                bestMove = None
-                bestScore = float('inf')
-                for child in ActualPosition.childs():
-                    childData = child.data()
-                    if childData[3] == True:
-                        bestMove = childData[2]
-                        break
-                    elif childData[3] == None:
-                        if childData[0] < bestScore:
-                            bestMove = childData[2]
-                            bestScore = childData[0]
-            """
             
+            if PARAM_ConsoleMoves:
+                print(bestMove)
+
             Analyzer.move(bestMove)
             Analyzer.saveBoard(s)
 
+            if PARAM_PlayAgainstHimself:
+                AI_OP_color = AI_color
+                AI_color = oppositeColor(AI_color)
+    
         else:
-            # Let user choose move
+            
             if PARAM_randomAI_OP_Moves:
                 # Select a random move
                 next_move = random.choice(list(Analyzer.getLegalMoves()))
                 Analyzer.move(next_move)
             else:
+                # Let user choose move
                 legalsMoves = list(Analyzer.getLegalMoves())
+
                 for i,move in enumerate(legalsMoves):
                     print(str(i)+' : '+str(move))
-                wait = int(input())
-                Analyzer.move(legalsMoves[wait])
+
+                goodInp = False
+                while not goodInp:
+                    try:
+                        wait = int(input())
+                        if wait <= (len(legalsMoves)-1):
+                            userMove = legalsMoves[wait]
+                            goodInp = True
+                    except:
+                        goodInp = False
+                    
+                Analyzer.move(userMove)
 
             Analyzer.saveBoard(s)
 
@@ -473,7 +507,8 @@ def Simulation():
             print('{}: {}'.format(s,AI_Advantage))
 
         if PARAM_ConsoleBoard or PARAM_ConsoleSteps:
-            print('')
+            #print('')
+            pass
 
 
         s+=1
@@ -510,6 +545,6 @@ else:
 if PARAM_CompareToLichess:
     plt.plot(x, MEMORY_Lichess_Advantages, color='green')
 
-plt.ylabel('AI Advantage per turn')
+plt.ylabel('AI Advantage per turn ('+Initial_AI_color+')')
 print(TEMP_calculatedScenarios)
 plt.show()

@@ -14,6 +14,7 @@ function engine(){
 }
 
 var position = 0;
+var maxPosition = 100;
 var running = true;
 var speed = 1000;
 
@@ -27,7 +28,10 @@ setInterval(function(){
         }
         var tempImg = document.getElementById(position).setAttribute("style", "display:block");
 
-        position+=1
+        position+=1;
+        if (position > maxPosition){
+            position = 0;
+        }
     }
     
 
